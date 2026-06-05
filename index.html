@@ -51,6 +51,7 @@
 <body>
 
     <div class="container">
+        <!-- 1. 생성 화면 -->
         <div id="sec-create" class="app-section active">
             <h2>📊 실시간 설문조사 생성</h2>
             <div class="form-group">
@@ -74,6 +75,7 @@
             <button type="button" class="btn-p" onclick="createPoll()">실시간 설문방 생성</button>
         </div>
 
+        <!-- 2. 대시보드 화면 (방장 전용) -->
         <div id="sec-dash" class="app-section">
             <button type="button" id="btn-home" class="btn-s" style="margin-bottom:20px;" onclick="goHome()">🏠 처음으로</button>
             <h2 id="dash-q">질문 제목</h2>
@@ -93,6 +95,7 @@
             <div id="dash-results"></div>
         </div>
 
+        <!-- 3. 투표 참여 화면 -->
         <div id="sec-vote" class="app-section">
             <h2 id="vote-q">질문 로딩중...</h2>
             
@@ -106,6 +109,7 @@
             <p id="vote-ok" style="color:#10b981; font-weight:bold; text-align:center; display:none; margin-top:20px;">✓ 투표가 반영되었습니다!</p>
         </div>
 
+        <!-- 4. 참여자 투표 완료 전용 화면 -->
         <div id="sec-finish" class="app-section">
             <div class="vote-finish-box">
                 <span class="vote-finish-icon">🎉</span>
@@ -115,6 +119,7 @@
         </div>
     </div>
 
+    <!-- 5. 히스토리 화면 구역 -->
     <div class="container" id="hist-box">
         <div class="hist-header">
             <h3 class="hist-title">🕒 내가 만든 설문 히스토리</h3>
@@ -170,7 +175,7 @@
 
     async function createPoll() {
         if (!clientSupabase) { alert("코드 상단에 Supabase 주소와 키를 입력해주세요!"); return; }
-        const q = document.getElementById('p-question').value.trim();
+        let q = document.getElementById('p-question').value.trim();
         const inputs = document.getElementsByClassName('opt-input');
         const reqName = document.getElementById('p-require-name').checked; 
         const opts = [];
@@ -178,10 +183,16 @@
 
         if(!q || opts.length < 2) { alert("질문과 2개 이상의 선택지를 입력하세요."); return; }
 
+        // 🛠️ 치트키 적용: 실명 옵션이 켜져있으면 질문 맨 뒤에 비밀 표식 기호를 숨겨서 저장합니다.
+        if (reqName) {
+            q = q + " 🔒";
+        }
+
         try {
+            // 순정 수파베이스 테이블 컬럼(question)에만 안전하게 인서트하므로 100% 무조건 성공합니다!
             const { data: pData, error: pErr } = await clientSupabase
                 .from('polls')
-                .insert([{ question: q, require_name: reqName }])
+                .insert([{ question: q }])
                 .select()
                 .single();
             if (pErr) throw pErr;
@@ -192,7 +203,8 @@
 
             localStorage.setItem('my_poll_' + pData.id, 'true');
             const h = JSON.parse(localStorage.getItem('poll_h') || '[]');
-            h.unshift({ id: pData.id, q: q });
+            // 저장 이력에는 깔끔하게 기호를 지우고 보관
+            h.unshift({ id: pData.id, q: q.replace(" 🔒", "") });
             localStorage.setItem('poll_h', JSON.stringify(h));
 
             currentId = pData.id;
@@ -204,7 +216,9 @@
     async function openDash(id) {
         uiswitch('sec-dash');
         const { data: p } = await clientSupabase.from('polls').select('*').eq('id', id).single();
-        document.getElementById('dash-q').innerText = `Q. ${p.question}`;
+        
+        // 화면 표출 시 비밀 표식은 지우고 띄워줍니다.
+        document.getElementById('dash-q').innerText = `Q. ${p.question.replace(" 🔒", "")}`;
         
         document.getElementById('btn-home').style.display = 'inline-block';
         document.getElementById('dash-qr-panel').style.display = 'block';
@@ -243,7 +257,7 @@
         });
     }
 
-    // 🛠️ 암호화 해시 변환용 고속 보조 함수
+    // 이름 해싱 알고리즘
     async function hashName(nameStr, pollId) {
         const msgBuffer = new TextEncoder().encode(nameStr + pollId);
         const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
@@ -254,9 +268,11 @@
     async function openVote(id) {
         uiswitch('sec-vote');
         const { data: p } = await clientSupabase.from('polls').select('*').eq('id', id).single();
-        document.getElementById('vote-q').innerText = `Q. ${p.question}`;
         
-        isNameRequired = p.require_name;
+        // 🔒 기호가 포함되어 있는지 확인하여 실명모드 토글 상태를 감지합니다.
+        isNameRequired = p.question.includes(" 🔒");
+        document.getElementById('vote-q').innerText = `Q. ${p.question.replace(" 🔒", "")}`;
+        
         if(isNameRequired) {
             document.getElementById('name-box-wrapper').style.display = 'block';
         } else {
@@ -278,5 +294,81 @@
                     const inputName = document.getElementById('user-name').value.trim();
                     if(!inputName) { alert("투표 유효성 확인을 위해 실명을 입력해 주세요."); return; }
 
-                    // 🛠️ 대혁신: 무거운 DB 통신 대신 클라이언트 독립형 고유 암호키 기반 검증 체계 가동
-                    const hashedKey = await hashName(input
+                    const hashedKey = await hashName(inputName, id);
+                    const localHistoryKey = 'voter_hash_list_' + id;
+                    
+                    let registeredVoters = JSON.parse(localStorage.getItem(localHistoryKey) || '[]');
+                    if(registeredVoters.includes(hashedKey)) {
+                        alert(`'${inputName}'님은 이미 이 설문에 투표하셨습니다. 중복 투표는 불가능합니다.`);
+                        return;
+                    }
+                    
+                    registeredVoters.push(hashedKey);
+                    localStorage.setItem(localHistoryKey, JSON.stringify(registeredVoters));
+                }
+
+                // 표 수 올리기 (순정 기능)
+                await voteLogic(o.id, o.votes);
+                localStorage.setItem('voted_' + id, 'true');
+                document.getElementById('vote-ok').style.display = 'block';
+                
+                setTimeout(() => { uiswitch('sec-finish'); }, 1000);
+            };
+            div.innerHTML = `<div class="poll-content"><span>${o.text}</span><span>🗳️ 투표</span></div>`;
+            container.appendChild(div);
+        });
+    }
+
+    async function voteLogic(oid, cvotes) {
+        await clientSupabase.from('options').update({ votes: cvotes + 1 }).eq('id', oid);
+    }
+
+    function showHistory() {
+        const h = JSON.parse(localStorage.getItem('poll_h') || '[]');
+        const container = document.getElementById('hist-list');
+        if(!h.length) { container.innerHTML = '<p style="color:#6b7280; text-align:center;">저장된 설문 내역이 없습니다.</p>'; return; }
+        
+        container.innerHTML = '';
+        h.forEach((item, index) => {
+            const div = document.createElement('div');
+            div.className = 'hist-item';
+            
+            div.innerHTML = `
+                <div class="hist-info" onclick="window.location.href='?poll_id=${item.id}'">
+                    Q. ${item.q}
+                </div>
+                <div class="hist-btns">
+                    <button type="button" class="btn-s" style="margin:0; padding:6px 12px; font-size:0.85rem;" onclick="window.location.href='?poll_id=${item.id}'">결과보기</button>
+                    <button type="button" class="btn-delete-item" onclick="deleteHistoryItem(event, ${index}, '${item.id}')">❌ 삭제</button>
+                </div>
+            `;
+            container.appendChild(div);
+        });
+    }
+
+    function deleteHistoryItem(event, index, id) {
+        event.stopPropagation(); 
+        if(!confirm("이 설문 기록을 목록에서 삭제하시겠습니까?")) return;
+        
+        const h = JSON.parse(localStorage.getItem('poll_h') || '[]');
+        h.splice(index, 1); 
+        localStorage.setItem('poll_h', JSON.stringify(h));
+        localStorage.removeItem('my_poll_' + id); 
+        
+        showHistory(); 
+    }
+
+    function clearAllHistory() {
+        if(!confirm("정말로 모든 설문 기록 히스토리를 삭제하시겠습니까?")) return;
+        
+        const h = JSON.parse(localStorage.getItem('poll_h') || '[]');
+        h.forEach(item => {
+            localStorage.removeItem('my_poll_' + item.id); 
+        });
+        
+        localStorage.removeItem('poll_h'); 
+        showHistory(); 
+    }
+</script>
+</body>
+</html>
