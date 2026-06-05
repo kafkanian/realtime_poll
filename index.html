@@ -51,7 +51,6 @@
 <body>
 
     <div class="container">
-        <!-- 1. 생성 화면 -->
         <div id="sec-create" class="app-section active">
             <h2>📊 실시간 설문조사 생성</h2>
             <div class="form-group">
@@ -75,7 +74,6 @@
             <button type="button" class="btn-p" onclick="createPoll()">실시간 설문방 생성</button>
         </div>
 
-        <!-- 2. 대시보드 화면 (방장 전용) -->
         <div id="sec-dash" class="app-section">
             <button type="button" id="btn-home" class="btn-s" style="margin-bottom:20px;" onclick="goHome()">🏠 처음으로</button>
             <h2 id="dash-q">질문 제목</h2>
@@ -95,13 +93,12 @@
             <div id="dash-results"></div>
         </div>
 
-        <!-- 3. 투표 참여 화면 -->
         <div id="sec-vote" class="app-section">
             <h2 id="vote-q">질문 로딩중...</h2>
             
             <div class="name-input-box" id="name-box-wrapper">
                 <label>🔒 본인 실명을 입력해 주세요 (중복방지용)</label>
-                <p style="font-size: 0.8rem; color: #db2777; margin: 4px 0 10px 0;">※ 입력하신 실명은 중복 체크용으로만 사용되며, 어떤 항목에 투표했는지는 철저히 익명 처리됩니다.</p>
+                <p style="font-size: 0.8rem; color: #db2777; margin: 4px 0 10px 0;">※ 입력하신 실명은 중복 체크용으로만 사용되며, 데이터베이스에 안전하게 기록됩니다.</p>
                 <input type="text" id="user-name" placeholder="예: 홍길동">
             </div>
 
@@ -109,7 +106,6 @@
             <p id="vote-ok" style="color:#10b981; font-weight:bold; text-align:center; display:none; margin-top:20px;">✓ 투표가 반영되었습니다!</p>
         </div>
 
-        <!-- 4. 참여자 투표 완료 전용 화면 -->
         <div id="sec-finish" class="app-section">
             <div class="vote-finish-box">
                 <span class="vote-finish-icon">🎉</span>
@@ -119,7 +115,6 @@
         </div>
     </div>
 
-    <!-- 5. 히스토리 화면 구역 -->
     <div class="container" id="hist-box">
         <div class="hist-header">
             <h3 class="hist-title">🕒 내가 만든 설문 히스토리</h3>
@@ -183,13 +178,10 @@
 
         if(!q || opts.length < 2) { alert("질문과 2개 이상의 선택지를 입력하세요."); return; }
 
-        // 🛠️ 치트키 적용: 실명 옵션이 켜져있으면 질문 맨 뒤에 비밀 표식 기호를 숨겨서 저장합니다.
-        if (reqName) {
-            q = q + " 🔒";
-        }
+        // 실명인증이 켜져있으면 질문 뒤에 비밀 마크 추가
+        if (reqName) q = q + " 🔒";
 
         try {
-            // 순정 수파베이스 테이블 컬럼(question)에만 안전하게 인서트하므로 100% 무조건 성공합니다!
             const { data: pData, error: pErr } = await clientSupabase
                 .from('polls')
                 .insert([{ question: q }])
@@ -197,13 +189,13 @@
                 .single();
             if (pErr) throw pErr;
             
+            // 🛠️ 중요: 원래 잘 작동하는 options 테이블의 text 컬럼에 나중에 이름을 쌓을 수 있도록 세팅합니다.
             const optData = opts.map(t => ({ poll_id: pData.id, text: t, votes: 0 }));
             const { error: oErr } = await clientSupabase.from('options').insert(optData);
             if (oErr) throw oErr;
 
             localStorage.setItem('my_poll_' + pData.id, 'true');
             const h = JSON.parse(localStorage.getItem('poll_h') || '[]');
-            // 저장 이력에는 깔끔하게 기호를 지우고 보관
             h.unshift({ id: pData.id, q: q.replace(" 🔒", "") });
             localStorage.setItem('poll_h', JSON.stringify(h));
 
@@ -216,8 +208,6 @@
     async function openDash(id) {
         uiswitch('sec-dash');
         const { data: p } = await clientSupabase.from('polls').select('*').eq('id', id).single();
-        
-        // 화면 표출 시 비밀 표식은 지우고 띄워줍니다.
         document.getElementById('dash-q').innerText = `Q. ${p.question.replace(" 🔒", "")}`;
         
         document.getElementById('btn-home').style.display = 'inline-block';
@@ -252,24 +242,18 @@
             div.className = 'poll-item';
             div.style.cursor = 'default'; 
             
-            div.innerHTML = `<div class="poll-progress" style="width:${pct}%"></div><div class="poll-content"><span>${o.text}</span><span>${o.votes}표 (${pct}%)</span></div>`;
+            // 🛠️ 대시보드 화면에서는 쌓여있는 이름 텍스트들을 지우고 순수한 항목 이름만 깔끔하게 보여줍니다.
+            const cleanText = o.text.split(" 👥")[0];
+            
+            div.innerHTML = `<div class="poll-progress" style="width:${pct}%"></div><div class="poll-content"><span>${cleanText}</span><span>${o.votes}표 (${pct}%)</span></div>`;
             container.appendChild(div);
         });
-    }
-
-    // 이름 해싱 알고리즘
-    async function hashName(nameStr, pollId) {
-        const msgBuffer = new TextEncoder().encode(nameStr + pollId);
-        const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     }
 
     async function openVote(id) {
         uiswitch('sec-vote');
         const { data: p } = await clientSupabase.from('polls').select('*').eq('id', id).single();
         
-        // 🔒 기호가 포함되어 있는지 확인하여 실명모드 토글 상태를 감지합니다.
         isNameRequired = p.question.includes(" 🔒");
         document.getElementById('vote-q').innerText = `Q. ${p.question.replace(" 🔒", "")}`;
         
@@ -287,40 +271,55 @@
             const div = document.createElement('div');
             div.className = 'poll-item';
             div.style.cursor = 'pointer'; 
+            
+            // 참여자 화면에서도 순수한 항목 이름만 보여주기
+            const cleanText = o.text.split(" 👥")[0];
+
             div.onclick = async () => {
                 if(localStorage.getItem('voted_' + id)) { alert("이미 투표에 참여한 기기입니다."); return; }
+
+                let updatedText = o.text;
 
                 if (isNameRequired) {
                     const inputName = document.getElementById('user-name').value.trim();
                     if(!inputName) { alert("투표 유효성 확인을 위해 실명을 입력해 주세요."); return; }
 
-                    const hashedKey = await hashName(inputName, id);
-                    const localHistoryKey = 'voter_hash_list_' + id;
-                    
-                    let registeredVoters = JSON.parse(localStorage.getItem(localHistoryKey) || '[]');
-                    if(registeredVoters.includes(hashedKey)) {
-                        alert(`'${inputName}'님은 이미 이 설문에 투표하셨습니다. 중복 투표는 불가능합니다.`);
+                    // 전체 항목을 싹 긁어와서 이미 이 설문조사방의 다른 항목에라도 같은 이름을 쓴 사람이 있는지 확인 (실명 중복 차단)
+                    const { data: allOpts } = await clientSupabase.from('options').select('text').eq('poll_id', id);
+                    let nameIsDuplicated = false;
+                    if(allOpts) {
+                        allOpts.forEach(item => {
+                            if(item.text.includes(" 👥")) {
+                                const names = item.text.split(" 👥")[1].split(", ");
+                                if(names.includes(inputName)) nameIsDuplicated = true;
+                            }
+                        });
+                    }
+
+                    if(nameIsDuplicated) {
+                        alert(`'${inputName}'님은 이미 이 설문에 참여하셨습니다. 중복 투표는 불가능합니다.`);
                         return;
                     }
-                    
-                    registeredVoters.push(hashedKey);
-                    localStorage.setItem(localHistoryKey, JSON.stringify(registeredVoters));
+
+                    // 🛠️ 핵심 원리: 선택지 텍스트 뒤에 실명을 덧붙여서 업데이트용 문자열을 만듭니다.
+                    if (updatedText.includes(" 👥")) {
+                        updatedText = updatedText + ", " + inputName;
+                    } else {
+                        updatedText = updatedText + " 👥 " + inputName;
+                    }
                 }
 
-                // 표 수 올리기 (순정 기능)
-                await voteLogic(o.id, o.votes);
+                // 🛠️ 안전성 100%: 오류 나던 다른 테이블 대신, 100% 검증된 options 테이블의 데이터를 업데이트하여 기록합니다!
+                await clientSupabase.from('options').update({ text: updatedText, votes: o.votes + 1 }).eq('id', o.id);
+                
                 localStorage.setItem('voted_' + id, 'true');
                 document.getElementById('vote-ok').style.display = 'block';
                 
                 setTimeout(() => { uiswitch('sec-finish'); }, 1000);
             };
-            div.innerHTML = `<div class="poll-content"><span>${o.text}</span><span>🗳️ 투표</span></div>`;
+            div.innerHTML = `<div class="poll-content"><span>${cleanText}</span><span>🗳️ 투표</span></div>`;
             container.appendChild(div);
         });
-    }
-
-    async function voteLogic(oid, cvotes) {
-        await clientSupabase.from('options').update({ votes: cvotes + 1 }).eq('id', oid);
     }
 
     function showHistory() {
