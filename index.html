@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>실시간 설문조사 시스템</title>
+    <title>실시간 비밀 설문조사 시스템</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
@@ -50,11 +50,8 @@
         .voter-list-box { margin-top: 25px; padding: 20px; background: #f8fafc; border-radius: 12px; border: 1px solid var(--border); text-align: left; }
         .voter-list-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
         .voter-list-title { font-weight: bold; color: var(--text); font-size: 1.05rem; margin: 0; }
-        .voter-item-line { font-size: 0.9rem; padding: 8px 0; border-bottom: 1px dashed var(--border); color: #4b5563; }
-        .voter-item-line:last-child { border-bottom: none; }
-        .voter-labels { font-weight: bold; color: var(--primary); }
+        .voter-item-line { font-size: 0.95rem; padding: 12px; background: white; border: 1px solid var(--border); border-radius: 8px; color: #374151; line-height: 1.5; word-break: break-all; }
         
-        /* 토글 버튼 디자인 최적화 */
         .btn-sort { background: #e0e7ff; color: #4f46e5; border: 1px solid #c7d2fe; padding: 6px 12px; font-size: 0.85rem; font-weight: bold; border-radius: 6px; cursor: pointer; width: auto; }
         .btn-sort.active { background: #4f46e5; color: white; border-color: #4f46e5; }
     </style>
@@ -62,7 +59,6 @@
 <body>
 
     <div class="container">
-        <!-- 1. 생성 화면 -->
         <div id="sec-create" class="app-section active">
             <h2>📊 실시간 설문조사 생성</h2>
             <div class="form-group">
@@ -80,13 +76,12 @@
             
             <label class="toggle-group">
                 <input type="checkbox" id="p-require-name">
-                <span>🔒 실명 입력 필수 (중복 투표 강력 방지 모드)</span>
+                <span>🔒 실명 입력 필수 (누가 뭘 뽑았는지 모르는 비밀 투표 모드)</span>
             </label>
 
             <button type="button" class="btn-p" onclick="createPoll()">실시간 설문방 생성</button>
         </div>
 
-        <!-- 2. 대시보드 화면 (방장 전용) -->
         <div id="sec-dash" class="app-section">
             <button type="button" id="btn-home" class="btn-s" style="margin-bottom:20px;" onclick="goHome()">🏠 처음으로</button>
             <h2 id="dash-q">질문 제목</h2>
@@ -105,24 +100,21 @@
             <h3>📊 투표 결과 실시간 현황</h3>
             <div id="dash-results"></div>
 
-            <!-- 실시간 실명 투표자 명단 구역 -->
             <div class="voter-list-box" id="dash-voter-box" style="display: none;">
                 <div class="voter-list-header">
-                    <div class="voter-list-title">📋 실시간 실명 투표자 명단</div>
-                    <!-- 🛠️ 실시간 연동 완벽 보완된 정렬 버튼 -->
+                    <div class="voter-list-title">📋 실시간 투표 참여자 명단 (비밀투표)</div>
                     <button type="button" id="sort-toggle-btn" class="btn-sort" onclick="toggleSortMode()">🔤 가나다순 정렬</button>
                 </div>
                 <div id="dash-voter-lines"></div>
             </div>
         </div>
 
-        <!-- 3. 투표 참여 화면 -->
         <div id="sec-vote" class="app-section">
             <h2 id="vote-q">질문 로딩중...</h2>
             
             <div class="name-input-box" id="name-box-wrapper">
                 <label>🔒 본인 실명을 입력해 주세요 (중복방지용)</label>
-                <p style="font-size: 0.8rem; color: #db2777; margin: 4px 0 10px 0;">※ 입력하신 실명은 중복 체크용으로 사용되며, 데이터베이스에 안전하게 기록됩니다.</p>
+                <p style="font-size: 0.8rem; color: #db2777; margin: 4px 0 10px 0;">※ 실명은 중복 투표 체크 및 참관 확인용으로만 쓰이며, 무엇을 투표했는지는 완전히 비밀 보장됩니다.</p>
                 <input type="text" id="user-name" placeholder="예: 홍길동">
             </div>
 
@@ -130,7 +122,6 @@
             <p id="vote-ok" style="color:#10b981; font-weight:bold; text-align:center; display:none; margin-top:20px;">✓ 투표가 반영되었습니다!</p>
         </div>
 
-        <!-- 4. 참여자 투표 완료 전용 화면 -->
         <div id="sec-finish" class="app-section">
             <div class="vote-finish-box">
                 <span class="vote-finish-icon">🎉</span>
@@ -140,7 +131,6 @@
         </div>
     </div>
 
-    <!-- 5. 히스토리 화면 구역 -->
     <div class="container" id="hist-box">
         <div class="hist-header">
             <h3 class="hist-title">🕒 내가 만든 설문 히스토리</h3>
@@ -158,7 +148,8 @@
     let channelRealtime = null;
     let isNameRequired = false;
     let rawOptionsData = []; 
-    let isSortModeActive = false; // 정렬 상태를 기억할 글로벌 변수
+    let voterNamesList = []; // 실시간 참여자 이름을 순수하게 담을 글로벌 배열
+    let isSortModeActive = false; 
 
     if (MY_URL !== '여기에_수파베이스_주소_입력') {
         clientSupabase = supabase.createClient(MY_URL, MY_KEY);
@@ -209,6 +200,7 @@
         if (reqName) q = q + " 🔒";
 
         try {
+            // 방명록 항목용 가짜 선택지를 하나 미리 구워둡니다.
             const { data: pData, error: pErr } = await clientSupabase
                 .from('polls')
                 .insert([{ question: q }])
@@ -217,6 +209,11 @@
             if (pErr) throw pErr;
             
             const optData = opts.map(t => ({ poll_id: pData.id, text: t, votes: 0 }));
+            // 명단 백업용 비밀 슬롯 추가
+            if (reqName) {
+                optData.push({ poll_id: pData.id, text: "SYSTEM_VOTERS_SECRET_DATA_SLOT", votes: 0 });
+            }
+            
             const { error: oErr } = await clientSupabase.from('options').insert(optData);
             if (oErr) throw oErr;
 
@@ -264,8 +261,20 @@
 
     async function drawChart(id) {
         const { data: opts } = await clientSupabase.from('options').select('*').eq('poll_id', id).order('id', {ascending:true});
-        rawOptionsData = opts || []; 
+        const unfiltered = opts || []; 
         
+        // 투표 수치용 진짜 선택지만 발라내기
+        rawOptionsData = unfiltered.filter(o => o.text !== "SYSTEM_VOTERS_SECRET_DATA_SLOT" && !o.text.startsWith("SYSTEM_SECRET_NAMES:"));
+        
+        // 숨겨진 방명록 데이터 슬롯 찾기
+        const secretSlot = unfiltered.find(o => o.text.startsWith("SYSTEM_SECRET_NAMES:"));
+        if (secretSlot) {
+            const rawNames = secretSlot.text.replace("SYSTEM_SECRET_NAMES:", "");
+            voterNamesList = rawNames.split(",").map(n => n.trim()).filter(n => n !== "");
+        } else {
+            voterNamesList = [];
+        }
+
         const container = document.getElementById('dash-results');
         container.innerHTML = '';
         
@@ -278,63 +287,50 @@
             div.className = 'poll-item';
             div.style.cursor = 'default'; 
             
-            const cleanText = o.text.split(" 👥")[0];
-            
-            div.innerHTML = `<div class="poll-progress" style="width:${pct}%"></div><div class="poll-content"><span>${cleanText}</span><span>${o.votes}표 (${pct}%)</span></div>`;
+            div.innerHTML = `<div class="poll-progress" style="width:${pct}%"></div><div class="poll-content"><span>${o.text}</span><span>${o.votes}표 (${pct}%)</span></div>`;
             container.appendChild(div);
         });
 
-        // ⭐ 핵심 수정: 실시간 신호가 올 때, 현재 정렬 스위치 상태를 고스란히 반영하여 명단을 그립니다!
         renderVoterLines(isSortModeActive);
     }
 
-    // ⭐ 핵심 수정: 조건식(shouldSort)에 맞춰 화면 명단을 가나다순으로 강제 정렬해 그리는 함수
+    // ⭐ 철저한 은폐 보장: 항목과 무관하게 전체 참여자 명단만 묶어 출력하는 함수
     function renderVoterLines(shouldSort = false) {
         const voterLinesContainer = document.getElementById('dash-voter-lines');
         voterLinesContainer.innerHTML = '';
-        let hasAnyVoter = false;
 
-        rawOptionsData.forEach(o => {
-            if (o.text.includes(" 👥")) {
-                hasAnyVoter = true;
-                const cleanText = o.text.split(" 👥")[0];
-                let namesStr = o.text.split(" 👥")[1];
-
-                // 이름을 분리해서 공백을 지웁니다.
-                let nameArray = namesStr.split(",").map(name => name.trim()).filter(name => name !== "");
-
-                // 가나다순 정렬 활성화 상태라면 자바스크립트로 완벽하게 가나다 정렬을 적용합니다.
-                if (shouldSort) {
-                    nameArray.sort((a, b) => a.localeCompare(b, 'ko'));
-                }
-
-                namesStr = nameArray.join(", ");
-
-                const line = document.createElement('div');
-                line.className = 'voter-item-line';
-                line.innerHTML = `<span class="voter-labels">[${cleanText}]:</span> ${namesStr}`;
-                voterLinesContainer.appendChild(line);
+        if (voterNamesList.length === 0) {
+            if (isNameRequired) {
+                voterLinesContainer.innerHTML = '<p style="color:#9ca3af; font-size:0.9rem; margin:0;">아직 투표한 참여자가 없습니다.</p>';
             }
-        });
-
-        if (!hasAnyVoter && isNameRequired) {
-            voterLinesContainer.innerHTML = '<p style="color:#9ca3af; font-size:0.9rem; margin:0;">아직 투표한 참여자가 없습니다.</p>';
+            return;
         }
+
+        let displayArray = [...voterNamesList];
+
+        // 가나다순 필터가 활성화되어 있으면 쪼개서 정렬해 줌
+        if (shouldSort) {
+            displayArray.sort((a, b) => a.localeCompare(b, 'ko'));
+        }
+
+        const line = document.createElement('div');
+        line.className = 'voter-item-line';
+        line.innerHTML = `👋 <b>현재 투표 완료자 (${displayArray.length}명):</b><br><span style="color:#4f46e5; font-weight:bold;">${displayArray.join(", ")}</span>`;
+        voterLinesContainer.appendChild(line);
     }
 
-    // ⭐ 핵심 수정: 버튼을 누르면 상태를 고정하고 실시간 그리기를 강제 제어합니다.
     function toggleSortMode() {
         const btn = document.getElementById('sort-toggle-btn');
-        isSortModeActive = !isSortModeActive; // true <-> false 반전
+        isSortModeActive = !isSortModeActive;
 
         if (isSortModeActive) {
             btn.classList.add('active');
             btn.innerText = "✓ 가나다순 정렬 중";
-            renderVoterLines(true); // 가나다순 즉시 정렬
+            renderVoterLines(true);
         } else {
             btn.classList.remove('active');
             btn.innerText = "🔤 가나다순 정렬";
-            renderVoterLines(false); // 원래 투표 순서로 복구
+            renderVoterLines(false);
         }
     }
 
@@ -352,56 +348,61 @@
         }
         
         const { data: opts = [] } = await clientSupabase.from('options').select('*').eq('poll_id', id).order('id', {ascending:true});
+        
+        // 참여자 정식 선택지만 노출
+        const validOpts = opts.filter(o => o.text !== "SYSTEM_VOTERS_SECRET_DATA_SLOT" && !o.text.startsWith("SYSTEM_SECRET_NAMES:"));
+        
         const container = document.getElementById('vote-options');
         container.innerHTML = '';
 
-        opts.forEach(o => {
+        validOpts.forEach(o => {
             const div = document.createElement('div');
             div.className = 'poll-item';
             div.style.cursor = 'pointer'; 
             
-            const cleanText = o.text.split(" 👥")[0];
-
             div.onclick = async () => {
                 if(localStorage.getItem('voted_' + id)) { alert("이미 투표에 참여한 기기입니다."); return; }
 
-                let updatedText = o.text;
-
+                let inputName = "";
                 if (isNameRequired) {
-                    const inputName = document.getElementById('user-name').value.trim();
+                    inputName = document.getElementById('user-name').value.trim();
                     if(!inputName) { alert("투표 유효성 확인을 위해 실명을 입력해 주세요."); return; }
+                    if(inputName.includes(",") || inputName.includes(":")) { alert("이름에 특수문자(, :)는 사용할 수 없습니다."); return; }
 
-                    const { data: allOpts } = await clientSupabase.from('options').select('text').eq('poll_id', id);
-                    let nameIsDuplicated = false;
-                    if(allOpts) {
-                        allOpts.forEach(item => {
-                            if(item.text.includes(" 👥")) {
-                                const names = item.text.split(" 👥")[1].split(",").map(n => n.trim());
-                                if(names.includes(inputName)) nameIsDuplicated = true;
-                            }
-                        });
-                    }
-
-                    if(nameIsDuplicated) {
-                        alert(`'${inputName}'님은 이미 이 설문에 참여하셨습니다. 중복 투표는 불가능합니다.`);
-                        return;
-                    }
-
-                    if (updatedText.includes(" 👥")) {
-                        updatedText = updatedText + ", " + inputName;
-                    } else {
-                        updatedText = updatedText + " 👥 " + inputName;
+                    // 중복 이름 검사 (숨겨진 명단 검색)
+                    const secretSlot = opts.find(item => item.text.startsWith("SYSTEM_SECRET_NAMES:") || item.text === "SYSTEM_VOTERS_SECRET_DATA_SLOT");
+                    if (secretSlot && secretSlot.text.startsWith("SYSTEM_SECRET_NAMES:")) {
+                        const existingNames = secretSlot.text.replace("SYSTEM_SECRET_NAMES:", "").split(",").map(n => n.trim());
+                        if (existingNames.includes(inputName)) {
+                            alert(`'${inputName}'님은 이미 이 설문에 참여하셨습니다. 중복 투표는 불가능합니다.`);
+                            return;
+                        }
                     }
                 }
 
-                await clientSupabase.from('options').update({ text: updatedText, votes: o.votes + 1 }).eq('id', o.id);
+                // 1. 투표수 1개 올리기 (이름정보 없이 순수하게 표수만 차감/누적)
+                await clientSupabase.from('options').update({ votes: o.votes + 1 }).eq('id', o.id);
+
+                // 2. 이름 필수방일 경우, 투표 항목과 무관하게 방명록 슬롯에만 따로 기록
+                if (isNameRequired) {
+                    const secretSlot = opts.find(item => item.text.startsWith("SYSTEM_SECRET_NAMES:") || item.text === "SYSTEM_VOTERS_SECRET_DATA_SLOT");
+                    if (secretSlot) {
+                        let currentNamesText = secretSlot.text;
+                        if (currentNamesText === "SYSTEM_VOTERS_SECRET_DATA_SLOT") {
+                            currentNamesText = "SYSTEM_SECRET_NAMES:" + inputName;
+                        } else {
+                            currentNamesText = currentNamesText + ", " + inputName;
+                        }
+                        await clientSupabase.from('options').update({ text: currentNamesText }).eq('id', secretSlot.id);
+                    }
+                }
                 
                 localStorage.setItem('voted_' + id, 'true');
                 document.getElementById('vote-ok').style.display = 'block';
                 
                 setTimeout(() => { uiswitch('sec-finish'); }, 1000);
             };
-            div.innerHTML = `<div class="poll-content"><span>${cleanText}</span><span>🗳️ 투표</span></div>`;
+            div.innerHTML = `<div class="poll-content"><span>${o.text}</span><span>🗳️ 투표</span></div>`;
             container.appendChild(div);
         });
     }
