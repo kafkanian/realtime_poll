@@ -51,6 +51,7 @@
 <body>
 
     <div class="container">
+        <!-- 1. 생성 화면 -->
         <div id="sec-create" class="app-section active">
             <h2>📊 실시간 설문조사 생성</h2>
             <div class="form-group">
@@ -74,6 +75,7 @@
             <button type="button" class="btn-p" onclick="createPoll()">실시간 설문방 생성</button>
         </div>
 
+        <!-- 2. 대시보드 화면 (방장 전용) -->
         <div id="sec-dash" class="app-section">
             <button type="button" id="btn-home" class="btn-s" style="margin-bottom:20px;" onclick="goHome()">🏠 처음으로</button>
             <h2 id="dash-q">질문 제목</h2>
@@ -93,6 +95,7 @@
             <div id="dash-results"></div>
         </div>
 
+        <!-- 3. 투표 참여 화면 -->
         <div id="sec-vote" class="app-section">
             <h2 id="vote-q">질문 로딩중...</h2>
             
@@ -106,6 +109,7 @@
             <p id="vote-ok" style="color:#10b981; font-weight:bold; text-align:center; display:none; margin-top:20px;">✓ 투표가 반영되었습니다!</p>
         </div>
 
+        <!-- 4. 참여자 투표 완료 전용 화면 -->
         <div id="sec-finish" class="app-section">
             <div class="vote-finish-box">
                 <span class="vote-finish-icon">🎉</span>
@@ -115,6 +119,7 @@
         </div>
     </div>
 
+    <!-- 5. 히스토리 화면 구역 -->
     <div class="container" id="hist-box">
         <div class="hist-header">
             <h3 class="hist-title">🕒 내가 만든 설문 히스토리</h3>
@@ -270,7 +275,7 @@
                     const inputName = document.getElementById('user-name').value.trim();
                     if(!inputName) { alert("투표 유효성 확인을 위해 실명을 입력해 주세요."); return; }
 
-                    // 🛠️ 안전장치 변경 1: 복잡한 필터링 대신 직관적인 select 구문으로 체크
+                    // 실명 중복 체크용 안전 조회
                     const { data: existingVoter, error: findErr } = await clientSupabase
                         .from('voters')
                         .select('name')
@@ -284,15 +289,16 @@
                         }
                     }
 
-                    // 🛠️ 안전장치 변경 2: 외부 키 및 인증 제한을 우회하기 위해 가장 느슨한 형태의 upsert 구조로 데이터 삽입
-                    const { error: insertErr } = await clientSupabase
-                        .from('voters')
-                        .upsert([{ poll_id: id, name: inputName }], { onConflict: 'id' });
+                    // 🛠️ 대격변 해결 포인트: 직접 테이블에 넣는 대신, 방금 만든 원시 SQL 치트키 함수(RPC)를 실행합니다.
+                    // 이 방식을 쓰면 REST API 컬럼 매핑 오류(400 에러)가 완벽하게 무력화됩니다.
+                    const { error: rpcErr } = await clientSupabase.rpc('insert_voter_direct', {
+                        p_poll_id: id,
+                        p_name: inputName
+                    });
 
-                    // 에러가 나더라도 무조건 중단시키는 대신 로그만 남기고 투표를 강행하거나 상세 안내를 표시하도록 방어선 구축
-                    if(insertErr) { 
-                        console.error(insertErr);
-                        alert("인증 시스템 통신에 일시적인 지연이 발생했습니다. 다시 한번 [투표] 버튼을 눌러주세요."); 
+                    if(rpcErr) { 
+                        console.error(rpcErr);
+                        alert("인증 시스템 오류가 지속되고 있습니다. 수파베이스 대시보드에서 1단계 SQL이 정상 실행되었는지 확인해 주세요."); 
                         return; 
                     }
                 }
