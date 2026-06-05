@@ -22,8 +22,7 @@
         .app-section.active { display: block; }
         .qr-panel { text-align: center; background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 25px; }
         #qrcode { display: inline-block; padding: 10px; background: white; border: 1px solid var(--border); margin: 15px 0; }
-        .poll-item { position: relative; background: #f3f4f6; border-radius: 8px; margin-bottom: 12px; overflow: hidden; cursor: pointer; height: 52px; border: 1px solid transparent; }
-        .poll-item:hover { border-color: var(--primary); }
+        .poll-item { position: relative; background: #f3f4f6; border-radius: 8px; margin-bottom: 12px; overflow: hidden; height: 52px; border: 1px solid transparent; }
         .poll-progress { background: #e0e7ff; height: 100%; width: 0%; transition: width 0.6s ease; }
         .poll-content { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; align-items: center; padding: 0 16px; font-weight: bold; }
         .hist-item { display: flex; justify-content: space-between; align-items: center; padding: 14px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; cursor: pointer; }
@@ -78,7 +77,6 @@
     const MY_URL = 'https://sajarqjkenrvewxtkqzv.supabase.co'; 
     const MY_KEY = 'sb_publishable_MVL8BLB5LZpo1gM8IJTLKw_8WdDhaOH';
     
-    // 글로벌 수파베이스 클라이언트 변수 (이름 충돌 방지를 위해 대문자 구별)
     let clientSupabase = null;
     let currentId = null;
     let channelRealtime = null;
@@ -134,9 +132,10 @@
             h.unshift({ id: pData.id, q: q });
             localStorage.setItem('poll_h', JSON.stringify(h));
 
-currentId = pData.id;
-openDash(pData.id);
-window.history.pushState({}, '', `?poll_id=${pData.id}`);
+            // 변경 포인트: 대시보드를 즉시 실행하고 화면 주소를 세팅
+            currentId = pData.id;
+            openDash(pData.id);
+            window.history.pushState({}, '', `?poll_id=${pData.id}`);
         } catch (e) { alert("오류 발생: " + e.message); }
     }
 
@@ -169,7 +168,10 @@ window.history.pushState({}, '', `?poll_id=${pData.id}`);
             const pct = total > 0 ? Math.round((o.votes / total) * 100) : 0;
             const div = document.createElement('div');
             div.className = 'poll-item';
-            div.onclick = () => voteLogic(o.id, o.votes);
+            
+            // 변경 포인트: 대시보드 화면 그래프에서는 클릭 투표 기능 완전 차단 및 커서 모양 일반화
+            div.style.cursor = 'default'; 
+            
             div.innerHTML = `<div class="poll-progress" style="width:${pct}%"></div><div class="poll-content"><span>${o.text}</span><span>${o.votes}표 (${pct}%)</span></div>`;
             container.appendChild(div);
         });
@@ -187,8 +189,10 @@ window.history.pushState({}, '', `?poll_id=${pData.id}`);
         opts.forEach(o => {
             const div = document.createElement('div');
             div.className = 'poll-item';
+            div.style.cursor = 'pointer'; // 투표 화면에서만 손가락 커서 작동
             div.onclick = async () => {
-                if(localStorage.getItem('voted_' + id)) { alert("이미 투เพ하셨습니다."); return; }
+                // 안전 장치: 브라우저 메모리에 투표 도장이 찍혀있으면 투표 거부
+                if(localStorage.getItem('voted_' + id)) { alert("이미 투표하셨습니다."); return; }
                 await voteLogic(o.id, o.votes);
                 localStorage.setItem('voted_' + id, 'true');
                 document.getElementById('vote-ok').style.display = 'block';
