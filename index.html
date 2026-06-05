@@ -47,7 +47,6 @@
         .toggle-group { display: flex; align-items: center; gap: 8px; background: #f3f4f6; padding: 12px; border-radius: 8px; margin-bottom: 20px; font-weight: bold; cursor: pointer; }
         .toggle-group input { width: 18px; height: 18px; cursor: pointer; }
 
-        /* 명단 스타일 추가 */
         .voter-list-box { margin-top: 25px; padding: 20px; background: #f8fafc; border-radius: 12px; border: 1px solid var(--border); text-align: left; }
         .voter-list-title { font-weight: bold; color: var(--text); font-size: 1.05rem; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
         .voter-item-line { font-size: 0.9rem; padding: 8px 0; border-bottom: 1px dashed var(--border); color: #4b5563; }
@@ -100,7 +99,7 @@
             <div id="dash-results"></div>
 
             <div class="voter-list-box" id="dash-voter-box" style="display: none;">
-                <div class="voter-list-title">📋 실시간 실명 투표자 명단</div>
+                <div class="voter-list-title">📋 실시간 실명 투표자 명단 (가나다순)</div>
                 <div id="dash-voter-lines"></div>
             </div>
         </div>
@@ -230,7 +229,6 @@
         document.getElementById('qrcode').innerHTML = "";
         new QRCode(document.getElementById("qrcode"), { text: url, width: 150, height: 150 });
 
-        // 실명인증 모드일 때만 명단 박스를 보여줍니다.
         if (isNameRequired) {
             document.getElementById('dash-voter-box').style.display = 'block';
         } else {
@@ -271,13 +269,19 @@
             div.innerHTML = `<div class="poll-progress" style="width:${pct}%"></div><div class="poll-content"><span>${cleanText}</span><span>${o.votes}표 (${pct}%)</span></div>`;
             container.appendChild(div);
 
-            // 🛠️ 대시보드 명단 렌더링 로직 추가
             if (o.text.includes(" 👥")) {
                 hasAnyVoter = true;
-                const names = o.text.split(" 👥")[1];
+                
+                // 🛠️ 대혁신: 가져온 이름들을 콤마로 쪼개어 배열로 만든 뒤, 가나다(localeCompare) 정렬을 돌립니다!
+                const nameArray = o.text.split(" 👥")[1].split(", ");
+                nameArray.sort((a, b) => a.localeCompare(b, 'ko')); 
+                
+                // 정렬된 이름을 다시 예쁘게 콤마로 합쳐서 화면에 띄워줍니다.
+                const sortedNames = nameArray.join(", ");
+
                 const line = document.createElement('div');
                 line.className = 'voter-item-line';
-                line.innerHTML = `<span class="voter-labels">[${cleanText}]:</span> ${names}`;
+                line.innerHTML = `<span class="voter-labels">[${cleanText}]:</span> ${sortedNames}`;
                 voterLinesContainer.appendChild(line);
             }
         });
