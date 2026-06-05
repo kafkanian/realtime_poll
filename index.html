@@ -26,18 +26,27 @@
         .poll-progress { background: #e0e7ff; height: 100%; width: 0%; transition: width 0.6s ease; }
         .poll-content { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; align-items: center; padding: 0 16px; font-weight: bold; }
         
-        /* 🛠️ 히스토리 스타일 및 전용 삭제 버튼 커스텀 정의 */
         .hist-item { display: flex; justify-content: space-between; align-items: center; padding: 14px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; background: #ffffff; }
         .hist-info { flex-grow: 1; text-align: left; font-weight: bold; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .hist-btns { display: flex; gap: 8px; flex-shrink: 0; align-items: center; }
         .hist-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid var(--border); padding-bottom: 10px; }
         .hist-title { margin: 0; font-size: 1.2rem; }
         
-        /* 전용 삭제 버튼 스타일 (무조건 보이도록 강제 세팅) */
         .btn-delete-item { background: #fff5f5; color: #e53e3e; border: 1px solid #feb2b2; padding: 6px 12px; font-size: 0.85rem; font-weight: bold; border-radius: 6px; cursor: pointer; display: inline-block; }
         .btn-delete-item:hover { background: #fff5f5; border-color: #e53e3e; }
 
         .vote-counter-box { display: flex; align-items: center; justify-content: space-between; background: #e0f2fe; color: #0369a1; padding: 12px 16px; border-radius: 8px; font-weight: bold; margin-bottom: 15px; }
+        .vote-finish-box { text-align: center; padding: 40px 20px; }
+        .vote-finish-icon { font-size: 4rem; margin-bottom: 15px; display: inline-block; animation: pop 0.5s ease; }
+        @keyframes pop { 0% { transform: scale(0); } 80% { transform: scale(1.2); } 100% { transform: scale(1); } }
+
+        .name-input-box { background: #fdf2f8; border: 1px solid #fbcfe8; padding: 20px; border-radius: 12px; margin-bottom: 20px; text-align: left; display: none; }
+        .name-input-box label { color: #be185d; }
+        .name-input-box input { border-color: #fbcfe8; font-size: 1.1rem; text-align: center; font-weight: bold; }
+        
+        /* 토글 옵션 스타일 */
+        .toggle-group { display: flex; align-items: center; gap: 8px; background: #f3f4f6; padding: 12px; border-radius: 8px; margin-bottom: 20px; font-weight: bold; cursor: pointer; }
+        .toggle-group input { width: 18px; height: 18px; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -57,6 +66,12 @@
                 </div>
                 <button type="button" class="btn-s" onclick="addOpt()">+ 항목 추가</button>
             </div>
+            
+            <label class="toggle-group">
+                <input type="checkbox" id="p-require-name">
+                <span>🔒 실명 입력 필수 (중복 투표 강력 방지 모드)</span>
+            </label>
+
             <button type="button" class="btn-p" onclick="createPoll()">실시간 설문방 생성</button>
         </div>
 
@@ -81,8 +96,23 @@
 
         <div id="sec-vote" class="app-section">
             <h2 id="vote-q">질문 로딩중...</h2>
+            
+            <div class="name-input-box" id="name-box-wrapper">
+                <label>🔒 본인 실명을 입력해 주세요 (중복방지용)</label>
+                <p style="font-size: 0.8rem; color: #db2777; margin: 4px 0 10px 0;">※ 입력하신 실명은 중복 체크용으로만 사용되며, 어떤 항목에 투표했는지는 철저히 익명 처리됩니다.</p>
+                <input type="text" id="user-name" placeholder="예: 홍길동">
+            </div>
+
             <div id="vote-options"></div>
             <p id="vote-ok" style="color:#10b981; font-weight:bold; text-align:center; display:none; margin-top:20px;">✓ 투표가 반영되었습니다!</p>
+        </div>
+
+        <div id="sec-finish" class="app-section">
+            <div class="vote-finish-box">
+                <span class="vote-finish-icon">🎉</span>
+                <h2>투표가 완료되었습니다!</h2>
+                <p style="color: #6b7280; margin-top: 10px;">제출해주신 의견이 실시간으로 반영되었습니다.<br>결과는 앞의 대형 화면에서 확인해 주세요.</p>
+            </div>
         </div>
     </div>
 
@@ -102,6 +132,7 @@
     let clientSupabase = null;
     let currentId = null;
     let channelRealtime = null;
+    let isNameRequired = false; // 설문방 옵션 전역 상태 저장용
 
     if (MY_URL !== '여기에_수파베이스_주소_입력') {
         clientSupabase = supabase.createClient(MY_URL, MY_KEY);
@@ -113,9 +144,13 @@
         if (pId) {
             currentId = pId;
             if (localStorage.getItem('my_poll_' + pId)) { 
-                openDash(pId, true); 
+                openDash(pId); 
             } else { 
-                openVote(pId); 
+                if (localStorage.getItem('voted_' + pId)) {
+                    uiswitch('sec-finish');
+                } else {
+                    openVote(pId); 
+                }
             }
         }
     };
@@ -139,13 +174,19 @@
         if (!clientSupabase) { alert("코드 상단에 Supabase 주소와 키를 입력해주세요!"); return; }
         const q = document.getElementById('p-question').value.trim();
         const inputs = document.getElementsByClassName('opt-input');
+        const reqName = document.getElementById('p-require-name').checked; // 체크 상태 수집
         const opts = [];
         for(let i of inputs) { if(i.value.trim()) opts.push(i.value.trim()); }
 
         if(!q || opts.length < 2) { alert("질문과 2개 이상의 선택지를 입력하세요."); return; }
 
         try {
-            const { data: pData, error: pErr } = await clientSupabase.from('polls').insert([{ question: q }]).select().single();
+            // 변경 포인트: require_name 옵션을 함께 테이블에 인서트
+            const { data: pData, error: pErr } = await clientSupabase
+                .from('polls')
+                .insert([{ question: q, require_name: reqName }])
+                .select()
+                .single();
             if (pErr) throw pErr;
             
             const optData = opts.map(t => ({ poll_id: pData.id, text: t, votes: 0 }));
@@ -158,28 +199,23 @@
             localStorage.setItem('poll_h', JSON.stringify(h));
 
             currentId = pData.id;
-            openDash(pData.id, true); 
+            openDash(pData.id); 
             window.history.pushState({}, '', `?poll_id=${pData.id}`);
         } catch (e) { alert("오류 발생: " + e.message); }
     }
 
-    async function openDash(id, isHost = false) {
+    async function openDash(id) {
         uiswitch('sec-dash');
         const { data: p } = await clientSupabase.from('polls').select('*').eq('id', id).single();
         document.getElementById('dash-q').innerText = `Q. ${p.question}`;
         
-        if (isHost) {
-            document.getElementById('btn-home').style.display = 'inline-block';
-            document.getElementById('dash-qr-panel').style.display = 'block';
-            
-            const url = `${window.location.origin}${window.location.pathname}?poll_id=${id}`;
-            document.getElementById('share-url').innerText = url;
-            document.getElementById('qrcode').innerHTML = "";
-            new QRCode(document.getElementById("qrcode"), { text: url, width: 150, height: 150 });
-        } else {
-            document.getElementById('btn-home').style.display = 'none';
-            document.getElementById('dash-qr-panel').style.display = 'none';
-        }
+        document.getElementById('btn-home').style.display = 'inline-block';
+        document.getElementById('dash-qr-panel').style.display = 'block';
+        
+        const url = `${window.location.origin}${window.location.pathname}?poll_id=${id}`;
+        document.getElementById('share-url').innerText = url;
+        document.getElementById('qrcode').innerHTML = "";
+        new QRCode(document.getElementById("qrcode"), { text: url, width: 150, height: 150 });
 
         drawChart(id);
         
@@ -215,6 +251,14 @@
         const { data: p } = await clientSupabase.from('polls').select('*').eq('id', id).single();
         document.getElementById('vote-q').innerText = `Q. ${p.question}`;
         
+        // 🛠️ 변경 포인트: 이 방이 실명 요구 방인지 검사하여 UI 처리
+        isNameRequired = p.require_name;
+        if(isNameRequired) {
+            document.getElementById('name-box-wrapper').style.display = 'block';
+        } else {
+            document.getElementById('name-box-wrapper').style.display = 'none';
+        }
+        
         const { data: opts = [] } = await clientSupabase.from('options').select('*').eq('poll_id', id).order('id', {ascending:true});
         const container = document.getElementById('vote-options');
         container.innerHTML = '';
@@ -224,12 +268,38 @@
             div.className = 'poll-item';
             div.style.cursor = 'pointer'; 
             div.onclick = async () => {
+                // 이미 기기 레벨에서 투표한 이력이 있으면 모드 불문 차단
                 if(localStorage.getItem('voted_' + id)) { alert("이미 투표하셨습니다."); return; }
+
+                // 🛠️ 변경 포인트: 실명 모드가 활성화되어 있을 때만 실명 체크 로직 수행
+                if (isNameRequired) {
+                    const inputName = document.getElementById('user-name').value.trim();
+                    if(!inputName) { alert("투표 유효성 확인을 위해 실명을 입력해 주세요."); return; }
+
+                    const { data: existingVoter } = await clientSupabase
+                        .from('voters')
+                        .select('*')
+                        .eq('poll_id', id)
+                        .eq('name', inputName);
+
+                    if(existingVoter && existingVoter.length > 0) {
+                        alert(`'${inputName}'님은 이미 이 설문에 투표하셨습니다. 중복 투표는 불가능합니다.`);
+                        return;
+                    }
+
+                    const { error: insertErr } = await clientSupabase
+                        .from('voters')
+                        .insert([{ poll_id: id, name: inputName }]);
+
+                    if(insertErr) { alert("인증 처리 중 오류가 발생했습니다."); return; }
+                }
+
+                // 공통 투표 로직 수행
                 await voteLogic(o.id, o.votes);
                 localStorage.setItem('voted_' + id, 'true');
                 document.getElementById('vote-ok').style.display = 'block';
                 
-                setTimeout(() => { openDash(id, false); }, 1000);
+                setTimeout(() => { uiswitch('sec-finish'); }, 1000);
             };
             div.innerHTML = `<div class="poll-content"><span>${o.text}</span><span>🗳️ 투표</span></div>`;
             container.appendChild(div);
@@ -240,7 +310,6 @@
         await clientSupabase.from('options').update({ votes: cvotes + 1 }).eq('id', oid);
     }
 
-    // 🕒 히스토리 목록 화면 업데이트 함수 (삭제 버튼 구조 최적화)
     function showHistory() {
         const h = JSON.parse(localStorage.getItem('poll_h') || '[]');
         const container = document.getElementById('hist-list');
@@ -265,7 +334,7 @@
     }
 
     function deleteHistoryItem(event, index, id) {
-        event.stopPropagation(); // 부모 클릭 무시
+        event.stopPropagation(); 
         if(!confirm("이 설문 기록을 목록에서 삭제하시겠습니까?")) return;
         
         const h = JSON.parse(localStorage.getItem('poll_h') || '[]');
