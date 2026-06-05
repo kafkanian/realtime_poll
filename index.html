@@ -48,10 +48,15 @@
         .toggle-group input { width: 18px; height: 18px; cursor: pointer; }
 
         .voter-list-box { margin-top: 25px; padding: 20px; background: #f8fafc; border-radius: 12px; border: 1px solid var(--border); text-align: left; }
-        .voter-list-title { font-weight: bold; color: var(--text); font-size: 1.05rem; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
+        .voter-list-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+        .voter-list-title { font-weight: bold; color: var(--text); font-size: 1.05rem; margin: 0; }
         .voter-item-line { font-size: 0.9rem; padding: 8px 0; border-bottom: 1px dashed var(--border); color: #4b5563; }
         .voter-item-line:last-child { border-bottom: none; }
         .voter-labels { font-weight: bold; color: var(--primary); }
+        
+        /* 정렬 버튼용 전용 디자인 */
+        .btn-sort { background: #e0e7ff; color: #4f46e5; border: 1px solid #c7d2fe; padding: 6px 12px; font-size: 0.85rem; font-weight: bold; border-radius: 6px; cursor: pointer; width: auto; }
+        .btn-sort:hover { background: #c7d2fe; }
     </style>
 </head>
 <body>
@@ -99,7 +104,10 @@
             <div id="dash-results"></div>
 
             <div class="voter-list-box" id="dash-voter-box" style="display: none;">
-                <div class="voter-list-title">📋 실시간 실명 투표자 명단 (가나다순)</div>
+                <div class="voter-list-header">
+                    <div class="voter-list-title">📋 실시간 실명 투표자 명단</div>
+                    <button type="button" class="btn-sort" onclick="sortVoterNames()">🔤 가나다순 정렬</button>
+                </div>
                 <div id="dash-voter-lines"></div>
             </div>
         </div>
@@ -142,6 +150,7 @@
     let currentId = null;
     let channelRealtime = null;
     let isNameRequired = false;
+    let rawOptionsData = []; // 실시간 원본 데이터를 보관할 임시 배열
 
     if (MY_URL !== '여기에_수파베이스_주소_입력') {
         clientSupabase = supabase.createClient(MY_URL, MY_KEY);
@@ -247,18 +256,15 @@
 
     async function drawChart(id) {
         const { data: opts } = await clientSupabase.from('options').select('*').eq('poll_id', id).order('id', {ascending:true});
+        rawOptionsData = opts || []; // 정렬 시 사용할 수 있도록 복사
+        
         const container = document.getElementById('dash-results');
-        const voterLinesContainer = document.getElementById('dash-voter-lines');
-        
         container.innerHTML = '';
-        voterLinesContainer.innerHTML = '';
         
-        const total = opts.reduce((s, o) => s + o.votes, 0);
+        const total = rawOptionsData.reduce((s, o) => s + o.votes, 0);
         document.getElementById('total-v').innerText = total;
 
-        let hasAnyVoter = false;
-
-        opts.forEach(o => {
+        rawOptionsData.forEach(o => {
             const pct = total > 0 ? Math.round((o.votes / total) * 100) : 0;
             const div = document.createElement('div');
             div.className = 'poll-item';
@@ -268,20 +274,34 @@
             
             div.innerHTML = `<div class="poll-progress" style="width:${pct}%"></div><div class="poll-content"><span>${cleanText}</span><span>${o.votes}표 (${pct}%)</span></div>`;
             container.appendChild(div);
+        });
 
+        // 기본적으로는 실시간으로 들어오는 순서대로 명단을 한 번 그려줍니다.
+        renderVoterLines(false);
+    }
+
+    // 명단을 화면에 그려주는 함수 (정렬 여부 플래그 추가)
+    function renderVoterLines(shouldSort = false) {
+        const voterLinesContainer = document.getElementById('dash-voter-lines');
+        voterLinesContainer.innerHTML = '';
+        let hasAnyVoter = false;
+
+        rawOptionsData.forEach(o => {
             if (o.text.includes(" 👥")) {
                 hasAnyVoter = true;
-                
-                // 🛠️ 대혁신: 가져온 이름들을 콤마로 쪼개어 배열로 만든 뒤, 가나다(localeCompare) 정렬을 돌립니다!
-                const nameArray = o.text.split(" 👥")[1].split(", ");
-                nameArray.sort((a, b) => a.localeCompare(b, 'ko')); 
-                
-                // 정렬된 이름을 다시 예쁘게 콤마로 합쳐서 화면에 띄워줍니다.
-                const sortedNames = nameArray.join(", ");
+                const cleanText = o.text.split(" 👥")[0];
+                let namesStr = o.text.split(" 👥")[1];
+
+                // 🛠️ 버튼을 눌렀을 경우(shouldSort가 true일 때) 가나다 정렬 수행
+                if (shouldSort) {
+                    const nameArray = namesStr.split(", ");
+                    nameArray.sort((a, b) => a.localeCompare(b, 'ko'));
+                    namesStr = nameArray.join(", ");
+                }
 
                 const line = document.createElement('div');
                 line.className = 'voter-item-line';
-                line.innerHTML = `<span class="voter-labels">[${cleanText}]:</span> ${sortedNames}`;
+                line.innerHTML = `<span class="voter-labels">[${cleanText}]:</span> ${namesStr}`;
                 voterLinesContainer.appendChild(line);
             }
         });
@@ -289,6 +309,12 @@
         if (!hasAnyVoter && isNameRequired) {
             voterLinesContainer.innerHTML = '<p style="color:#9ca3af; font-size:0.9rem; margin:0;">아직 투표한 참여자가 없습니다.</p>';
         }
+    }
+
+    // 🛠️ 가나다순 정렬 버튼을 눌렀을 때 실행되는 함수
+    function sortVoterNames() {
+        if (rawOptionsData.length === 0) return;
+        renderVoterLines(true); // true 값을 보내 정렬된 명단을 출력합니다.
     }
 
     async function openVote(id) {
