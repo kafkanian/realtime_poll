@@ -26,11 +26,14 @@
         .poll-progress { background: #e0e7ff; height: 100%; width: 0%; transition: width 0.6s ease; }
         .poll-content { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; align-items: center; padding: 0 16px; font-weight: bold; }
         .hist-item { display: flex; justify-content: space-between; align-items: center; padding: 14px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; cursor: pointer; }
+        /* 실시간 인원수 강조를 위한 스타일 추가 */
+        .vote-counter-box { display: flex; align-items: center; justify-content: space-between; background: #e0f2fe; color: #0369a1; padding: 12px 16px; border-radius: 8px; font-weight: bold; margin-bottom: 15px; }
     </style>
 </head>
 <body>
 
     <div class="container">
+        <!-- 1. 생성 화면 -->
         <div id="sec-create" class="app-section active">
             <h2>📊 실시간 설문조사 생성</h2>
             <div class="form-group">
@@ -48,6 +51,7 @@
             <button type="button" class="btn-p" onclick="createPoll()">실시간 설문방 생성</button>
         </div>
 
+        <!-- 2. 대시보드 화면 -->
         <div id="sec-dash" class="app-section">
             <button type="button" class="btn-s" style="margin-bottom:20px;" onclick="goHome()">🏠 처음으로</button>
             <h2 id="dash-q">질문 제목</h2>
@@ -56,10 +60,18 @@
                 <div id="qrcode"></div>
                 <div id="share-url" style="font-size:0.8rem; color:#6b7280; word-break:break-all;"></div>
             </div>
-            <h3>결과 (<span id="total-v">0</span>표)</h3>
+            
+            <!-- 변경 포인트: 실시간 참여자 수를 상단에 예쁘게 배치하여 시인성 확보 -->
+            <div class="vote-counter-box">
+                <span>👥 현재 실시간 참여자 수</span>
+                <span><span id="total-v" style="font-size: 1.3rem;">0</span> 명</span>
+            </div>
+
+            <h3>📊 투표 결과 실시간 현황</h3>
             <div id="dash-results"></div>
         </div>
 
+        <!-- 3. 투표 참여 화면 -->
         <div id="sec-vote" class="app-section">
             <h2 id="vote-q">질문 로딩중...</h2>
             <div id="vote-options"></div>
@@ -67,6 +79,7 @@
         </div>
     </div>
 
+    <!-- 4. 히스토리 -->
     <div class="container" id="hist-box">
         <h3>🕒 내가 만든 설문 히스토리</h3>
         <div id="hist-list"></div>
@@ -132,7 +145,6 @@
             h.unshift({ id: pData.id, q: q });
             localStorage.setItem('poll_h', JSON.stringify(h));
 
-            // 변경 포인트: 대시보드를 즉시 실행하고 화면 주소를 세팅
             currentId = pData.id;
             openDash(pData.id);
             window.history.pushState({}, '', `?poll_id=${pData.id}`);
@@ -149,11 +161,15 @@
         document.getElementById('qrcode').innerHTML = "";
         new QRCode(document.getElementById("qrcode"), { text: url, width: 150, height: 150 });
 
+        // 1. 처음 대시보드가 켜질 때 차트와 인원수를 그립니다.
         drawChart(id);
         
+        // 2. 누군가 투표를 하면 실시간 채널이 신호를 감지해서 새로고침 없이 drawChart()를 다시 실행시킵니다.
         if (channelRealtime) clientSupabase.removeChannel(channelRealtime);
         channelRealtime = clientSupabase.channel(`any:${id}`)
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'options', filter: `poll_id=eq.${id}` }, () => { drawChart(id); })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'options', filter: `poll_id=eq.${id}` }, () => { 
+                drawChart(id); // 👈 실시간 신호가 오면 인원수와 차트를 자동으로 다시 계산함!
+            })
             .subscribe();
     }
 
@@ -161,15 +177,15 @@
         const { data: opts } = await clientSupabase.from('options').select('*').eq('poll_id', id).order('id', {ascending:true});
         const container = document.getElementById('dash-results');
         container.innerHTML = '';
+        
+        // 변경 포인트: 모든 선택지의 득표수를 합산하여 전체 참여자 수를 실시간으로 계산 및 표출
         const total = opts.reduce((s, o) => s + o.votes, 0);
-        document.getElementById('total-v').innerText = total;
+        document.getElementById('total-v').innerText = total; // 👈 새로고침 없이 숫자가 즉시 바뀝니다!
 
         opts.forEach(o => {
             const pct = total > 0 ? Math.round((o.votes / total) * 100) : 0;
             const div = document.createElement('div');
             div.className = 'poll-item';
-            
-            // 변경 포인트: 대시보드 화면 그래프에서는 클릭 투표 기능 완전 차단 및 커서 모양 일반화
             div.style.cursor = 'default'; 
             
             div.innerHTML = `<div class="poll-progress" style="width:${pct}%"></div><div class="poll-content"><span>${o.text}</span><span>${o.votes}표 (${pct}%)</span></div>`;
@@ -189,9 +205,8 @@
         opts.forEach(o => {
             const div = document.createElement('div');
             div.className = 'poll-item';
-            div.style.cursor = 'pointer'; // 투표 화면에서만 손가락 커서 작동
+            div.style.cursor = 'pointer'; 
             div.onclick = async () => {
-                // 안전 장치: 브라우저 메모리에 투표 도장이 찍혀있으면 투표 거부
                 if(localStorage.getItem('voted_' + id)) { alert("이미 투표하셨습니다."); return; }
                 await voteLogic(o.id, o.votes);
                 localStorage.setItem('voted_' + id, 'true');
