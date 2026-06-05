@@ -330,7 +330,7 @@
 
     // Supabase 클라이언트 초기화 및 경고창 제어
     if (SUPABASE_URL !== 'YOUR_SUPABASE_PROJECT_URL') {
-        supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         document.getElementById('config-warning').style.display = 'none';
     }
 
