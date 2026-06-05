@@ -26,7 +26,6 @@
         .poll-progress { background: #e0e7ff; height: 100%; width: 0%; transition: width 0.6s ease; }
         .poll-content { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; align-items: center; padding: 0 16px; font-weight: bold; }
         .hist-item { display: flex; justify-content: space-between; align-items: center; padding: 14px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; cursor: pointer; }
-        /* 실시간 인원수 강조를 위한 스타일 추가 */
         .vote-counter-box { display: flex; align-items: center; justify-content: space-between; background: #e0f2fe; color: #0369a1; padding: 12px 16px; border-radius: 8px; font-weight: bold; margin-bottom: 15px; }
     </style>
 </head>
@@ -53,15 +52,17 @@
 
         <!-- 2. 대시보드 화면 -->
         <div id="sec-dash" class="app-section">
-            <button type="button" class="btn-s" style="margin-bottom:20px;" onclick="goHome()">🏠 처음으로</button>
+            <!-- 변경 포인트: 홈으로 버튼에 id="btn-home" 부여 -->
+            <button type="button" id="btn-home" class="btn-s" style="margin-bottom:20px;" onclick="goHome()">🏠 처음으로</button>
             <h2 id="dash-q">질문 제목</h2>
-            <div class="qr-panel">
+            
+            <!-- 변경 포인트: QR코드 판넬 전체에 id="dash-qr-panel" 부여 (참여자 화면에서는 이것도 숨김) -->
+            <div class="qr-panel" id="dash-qr-panel">
                 <h3>📱 참여 QR 코드</h3>
                 <div id="qrcode"></div>
                 <div id="share-url" style="font-size:0.8rem; color:#6b7280; word-break:break-all;"></div>
             </div>
             
-            <!-- 변경 포인트: 실시간 참여자 수를 상단에 예쁘게 배치하여 시인성 확보 -->
             <div class="vote-counter-box">
                 <span>👥 현재 실시간 참여자 수</span>
                 <span><span id="total-v" style="font-size: 1.3rem;">0</span> 명</span>
@@ -103,8 +104,11 @@
         const pId = new URLSearchParams(window.location.search).get('poll_id');
         if (pId) {
             currentId = pId;
-            if (localStorage.getItem('my_poll_' + pId)) { openDash(pId); } 
-            else { openVote(pId); }
+            if (localStorage.getItem('my_poll_' + pId)) { 
+                openDash(pId, true); // 내가 만든 방이면 방장 모드로 열기
+            } else { 
+                openVote(pId); 
+            }
         }
     };
 
@@ -146,29 +150,39 @@
             localStorage.setItem('poll_h', JSON.stringify(h));
 
             currentId = pData.id;
-            openDash(pData.id);
+            openDash(pData.id, true); // 방장은 당연히 버튼이 보이도록 true 처리
             window.history.pushState({}, '', `?poll_id=${pData.id}`);
         } catch (e) { alert("오류 발생: " + e.message); }
     }
 
-    async function openDash(id) {
+    // 변경 포인트:isHost(방장여부) 매개변수를 받아 UI 요소를 숨기거나 보여줍니다.
+    async function openDash(id, isHost = false) {
         uiswitch('sec-dash');
         const { data: p } = await clientSupabase.from('polls').select('*').eq('id', id).single();
         document.getElementById('dash-q').innerText = `Q. ${p.question}`;
         
-        const url = `${window.location.origin}${window.location.pathname}?poll_id=${id}`;
-        document.getElementById('share-url').innerText = url;
-        document.getElementById('qrcode').innerHTML = "";
-        new QRCode(document.getElementById("qrcode"), { text: url, width: 150, height: 150 });
+        // 권한 분기점 설정
+        if (isHost) {
+            // 방장에게는 [홈으로] 버튼과 [QR코드]를 다 보여줍니다.
+            document.getElementById('btn-home').style.display = 'inline-block';
+            document.getElementById('dash-qr-panel').style.display = 'block';
+            
+            const url = `${window.location.origin}${window.location.pathname}?poll_id=${id}`;
+            document.getElementById('share-url').innerText = url;
+            document.getElementById('qrcode').innerHTML = "";
+            new QRCode(document.getElementById("qrcode"), { text: url, width: 150, height: 150 });
+        } else {
+            // 일반 참여자에게는 [홈으로] 버튼과 [QR코드]를 완전히 숨겨버립니다.
+            document.getElementById('btn-home').style.display = 'none';
+            document.getElementById('dash-qr-panel').style.display = 'none';
+        }
 
-        // 1. 처음 대시보드가 켜질 때 차트와 인원수를 그립니다.
         drawChart(id);
         
-        // 2. 누군가 투표를 하면 실시간 채널이 신호를 감지해서 새로고침 없이 drawChart()를 다시 실행시킵니다.
         if (channelRealtime) clientSupabase.removeChannel(channelRealtime);
         channelRealtime = clientSupabase.channel(`any:${id}`)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'options', filter: `poll_id=eq.${id}` }, () => { 
-                drawChart(id); // 👈 실시간 신호가 오면 인원수와 차트를 자동으로 다시 계산함!
+                drawChart(id); 
             })
             .subscribe();
     }
@@ -178,9 +192,8 @@
         const container = document.getElementById('dash-results');
         container.innerHTML = '';
         
-        // 변경 포인트: 모든 선택지의 득표수를 합산하여 전체 참여자 수를 실시간으로 계산 및 표출
         const total = opts.reduce((s, o) => s + o.votes, 0);
-        document.getElementById('total-v').innerText = total; // 👈 새로고침 없이 숫자가 즉시 바뀝니다!
+        document.getElementById('total-v').innerText = total;
 
         opts.forEach(o => {
             const pct = total > 0 ? Math.round((o.votes / total) * 100) : 0;
@@ -211,7 +224,9 @@
                 await voteLogic(o.id, o.votes);
                 localStorage.setItem('voted_' + id, 'true');
                 document.getElementById('vote-ok').style.display = 'block';
-                setTimeout(() => { openDash(id); }, 1000);
+                
+                // 변경 포인트: 투표 후 결과 화면을 보여줄 때, 참여자이므로 false를 넘겨 홈 버튼을 숨깁니다.
+                setTimeout(() => { openDash(id, false); }, 1000);
             };
             div.innerHTML = `<div class="poll-content"><span>${o.text}</span><span>🗳️ 투표</span></div>`;
             container.appendChild(div);
