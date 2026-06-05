@@ -26,14 +26,17 @@
         .poll-progress { background: #e0e7ff; height: 100%; width: 0%; transition: width 0.6s ease; }
         .poll-content { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; align-items: center; padding: 0 16px; font-weight: bold; }
         
-        /* 히스토리 아이템 내부 레이아웃 조정 */
-        .hist-item { display: flex; justify-content: space-between; align-items: center; padding: 14px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; cursor: pointer; background: #ffffff; transition: background 0.2s; }
-        .hist-item:hover { background: #f9fafb; }
-        .hist-info { flex-grow: 1; margin-right: 15px; }
-        .hist-btns { display: flex; gap: 6px; align-items: center; }
+        /* 🛠️ 히스토리 스타일 및 전용 삭제 버튼 커스텀 정의 */
+        .hist-item { display: flex; justify-content: space-between; align-items: center; padding: 14px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; background: #ffffff; }
+        .hist-info { flex-grow: 1; text-align: left; font-weight: bold; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .hist-btns { display: flex; gap: 8px; flex-shrink: 0; align-items: center; }
         .hist-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid var(--border); padding-bottom: 10px; }
         .hist-title { margin: 0; font-size: 1.2rem; }
         
+        /* 전용 삭제 버튼 스타일 (무조건 보이도록 강제 세팅) */
+        .btn-delete-item { background: #fff5f5; color: #e53e3e; border: 1px solid #feb2b2; padding: 6px 12px; font-size: 0.85rem; font-weight: bold; border-radius: 6px; cursor: pointer; display: inline-block; }
+        .btn-delete-item:hover { background: #fff5f5; border-color: #e53e3e; }
+
         .vote-counter-box { display: flex; align-items: center; justify-content: space-between; background: #e0f2fe; color: #0369a1; padding: 12px 16px; border-radius: 8px; font-weight: bold; margin-bottom: 15px; }
     </style>
 </head>
@@ -212,7 +215,7 @@
         const { data: p } = await clientSupabase.from('polls').select('*').eq('id', id).single();
         document.getElementById('vote-q').innerText = `Q. ${p.question}`;
         
-        const { data: opts } = await clientSupabase.from('options').select('*').eq('poll_id', id).order('id', {ascending:true});
+        const { data: opts = [] } = await clientSupabase.from('options').select('*').eq('poll_id', id).order('id', {ascending:true});
         const container = document.getElementById('vote-options');
         container.innerHTML = '';
 
@@ -237,7 +240,7 @@
         await clientSupabase.from('options').update({ votes: cvotes + 1 }).eq('id', oid);
     }
 
-    // 🕒 히스토리 화면 그리기 함수 (삭제 로직 반영)
+    // 🕒 히스토리 목록 화면 업데이트 함수 (삭제 버튼 구조 최적화)
     function showHistory() {
         const h = JSON.parse(localStorage.getItem('poll_h') || '[]');
         const container = document.getElementById('hist-list');
@@ -248,44 +251,41 @@
             const div = document.createElement('div');
             div.className = 'hist-item';
             
-            // 글자 클릭 시 결과 보기로 이동
             div.innerHTML = `
                 <div class="hist-info" onclick="window.location.href='?poll_id=${item.id}'">
-                    <strong>${item.q}</strong>
+                    Q. ${item.q}
                 </div>
                 <div class="hist-btns">
-                    <button class="btn-s" style="margin:0; padding:6px 12px; font-size:0.85rem;" onclick="window.location.href='?poll_id=${item.id}'">결과보기</button>
-                    <button class="btn-d" style="margin:0; padding:6px 12px; font-size:0.85rem;" onclick="deleteHistoryItem(event, ${index}, '${item.id}')">❌</button>
+                    <button type="button" class="btn-s" style="margin:0; padding:6px 12px; font-size:0.85rem;" onclick="window.location.href='?poll_id=${item.id}'">결과보기</button>
+                    <button type="button" class="btn-delete-item" onclick="deleteHistoryItem(event, ${index}, '${item.id}')">❌ 삭제</button>
                 </div>
             `;
             container.appendChild(div);
         });
     }
 
-    // ❌ 변경 포인트: 특정 히스토리 하나만 골라서 지우기
     function deleteHistoryItem(event, index, id) {
-        event.stopPropagation(); // 클릭 이벤트가 부모 div로 번져 페이지 이동이 일어나는 것 차단
-        if(!confirm("이 설문 기록을 목록에서 삭제하시겠습니까? (Supabase 데이터베이스 서버에는 기록이 유지됩니다)")) return;
+        event.stopPropagation(); // 부모 클릭 무시
+        if(!confirm("이 설문 기록을 목록에서 삭제하시겠습니까?")) return;
         
         const h = JSON.parse(localStorage.getItem('poll_h') || '[]');
-        h.splice(index, 1); // 해당 순서의 아이템 제거
+        h.splice(index, 1); 
         localStorage.setItem('poll_h', JSON.stringify(h));
-        localStorage.removeItem('my_poll_' + id); // 방장 권한 표식도 제거
+        localStorage.removeItem('my_poll_' + id); 
         
-        showHistory(); // 히스토리 목록 새로고침
+        showHistory(); 
     }
 
-    // 🔥 변경 포인트: 모든 히스토리 한 번에 초기화하기
     function clearAllHistory() {
-        if(!confirm("정말로 모든 설문 기록 히스토리를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.")) return;
+        if(!confirm("정말로 모든 설문 기록 히스토리를 삭제하시겠습니까?")) return;
         
         const h = JSON.parse(localStorage.getItem('poll_h') || '[]');
         h.forEach(item => {
-            localStorage.removeItem('my_poll_' + item.id); // 모든 방장 권한 표식 제거
+            localStorage.removeItem('my_poll_' + item.id); 
         });
         
-        localStorage.removeItem('poll_h'); // 히스토리 목록 키 완전 삭제
-        showHistory(); // 목록 갱신
+        localStorage.removeItem('poll_h'); 
+        showHistory(); 
     }
 </script>
 </body>
