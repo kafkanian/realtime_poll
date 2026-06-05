@@ -134,7 +134,9 @@
             h.unshift({ id: pData.id, q: q });
             localStorage.setItem('poll_h', JSON.stringify(h));
 
-            window.location.href = `?poll_id=${pData.id}`;
+currentId = pData.id;
+openDash(pData.id);
+window.history.pushState({}, '', `?poll_id=${pData.id}`);
         } catch (e) { alert("오류 발생: " + e.message); }
     }
 
