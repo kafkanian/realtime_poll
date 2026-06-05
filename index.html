@@ -25,14 +25,21 @@
         .poll-item { position: relative; background: #f3f4f6; border-radius: 8px; margin-bottom: 12px; overflow: hidden; height: 52px; border: 1px solid transparent; }
         .poll-progress { background: #e0e7ff; height: 100%; width: 0%; transition: width 0.6s ease; }
         .poll-content { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; align-items: center; padding: 0 16px; font-weight: bold; }
-        .hist-item { display: flex; justify-content: space-between; align-items: center; padding: 14px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; cursor: pointer; }
+        
+        /* 히스토리 아이템 내부 레이아웃 조정 */
+        .hist-item { display: flex; justify-content: space-between; align-items: center; padding: 14px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; cursor: pointer; background: #ffffff; transition: background 0.2s; }
+        .hist-item:hover { background: #f9fafb; }
+        .hist-info { flex-grow: 1; margin-right: 15px; }
+        .hist-btns { display: flex; gap: 6px; align-items: center; }
+        .hist-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid var(--border); padding-bottom: 10px; }
+        .hist-title { margin: 0; font-size: 1.2rem; }
+        
         .vote-counter-box { display: flex; align-items: center; justify-content: space-between; background: #e0f2fe; color: #0369a1; padding: 12px 16px; border-radius: 8px; font-weight: bold; margin-bottom: 15px; }
     </style>
 </head>
 <body>
 
     <div class="container">
-        <!-- 1. 생성 화면 -->
         <div id="sec-create" class="app-section active">
             <h2>📊 실시간 설문조사 생성</h2>
             <div class="form-group">
@@ -50,13 +57,10 @@
             <button type="button" class="btn-p" onclick="createPoll()">실시간 설문방 생성</button>
         </div>
 
-        <!-- 2. 대시보드 화면 -->
         <div id="sec-dash" class="app-section">
-            <!-- 변경 포인트: 홈으로 버튼에 id="btn-home" 부여 -->
             <button type="button" id="btn-home" class="btn-s" style="margin-bottom:20px;" onclick="goHome()">🏠 처음으로</button>
             <h2 id="dash-q">질문 제목</h2>
             
-            <!-- 변경 포인트: QR코드 판넬 전체에 id="dash-qr-panel" 부여 (참여자 화면에서는 이것도 숨김) -->
             <div class="qr-panel" id="dash-qr-panel">
                 <h3>📱 참여 QR 코드</h3>
                 <div id="qrcode"></div>
@@ -72,7 +76,6 @@
             <div id="dash-results"></div>
         </div>
 
-        <!-- 3. 투표 참여 화면 -->
         <div id="sec-vote" class="app-section">
             <h2 id="vote-q">질문 로딩중...</h2>
             <div id="vote-options"></div>
@@ -80,9 +83,11 @@
         </div>
     </div>
 
-    <!-- 4. 히스토리 -->
     <div class="container" id="hist-box">
-        <h3>🕒 내가 만든 설문 히스토리</h3>
+        <div class="hist-header">
+            <h3 class="hist-title">🕒 내가 만든 설문 히스토리</h3>
+            <button type="button" class="btn-d" style="padding: 6px 12px; font-size: 0.85rem;" onclick="clearAllHistory()">전체 초기화</button>
+        </div>
         <div id="hist-list"></div>
     </div>
 
@@ -105,7 +110,7 @@
         if (pId) {
             currentId = pId;
             if (localStorage.getItem('my_poll_' + pId)) { 
-                openDash(pId, true); // 내가 만든 방이면 방장 모드로 열기
+                openDash(pId, true); 
             } else { 
                 openVote(pId); 
             }
@@ -150,20 +155,17 @@
             localStorage.setItem('poll_h', JSON.stringify(h));
 
             currentId = pData.id;
-            openDash(pData.id, true); // 방장은 당연히 버튼이 보이도록 true 처리
+            openDash(pData.id, true); 
             window.history.pushState({}, '', `?poll_id=${pData.id}`);
         } catch (e) { alert("오류 발생: " + e.message); }
     }
 
-    // 변경 포인트:isHost(방장여부) 매개변수를 받아 UI 요소를 숨기거나 보여줍니다.
     async function openDash(id, isHost = false) {
         uiswitch('sec-dash');
         const { data: p } = await clientSupabase.from('polls').select('*').eq('id', id).single();
         document.getElementById('dash-q').innerText = `Q. ${p.question}`;
         
-        // 권한 분기점 설정
         if (isHost) {
-            // 방장에게는 [홈으로] 버튼과 [QR코드]를 다 보여줍니다.
             document.getElementById('btn-home').style.display = 'inline-block';
             document.getElementById('dash-qr-panel').style.display = 'block';
             
@@ -172,7 +174,6 @@
             document.getElementById('qrcode').innerHTML = "";
             new QRCode(document.getElementById("qrcode"), { text: url, width: 150, height: 150 });
         } else {
-            // 일반 참여자에게는 [홈으로] 버튼과 [QR코드]를 완전히 숨겨버립니다.
             document.getElementById('btn-home').style.display = 'none';
             document.getElementById('dash-qr-panel').style.display = 'none';
         }
@@ -225,7 +226,6 @@
                 localStorage.setItem('voted_' + id, 'true');
                 document.getElementById('vote-ok').style.display = 'block';
                 
-                // 변경 포인트: 투표 후 결과 화면을 보여줄 때, 참여자이므로 false를 넘겨 홈 버튼을 숨깁니다.
                 setTimeout(() => { openDash(id, false); }, 1000);
             };
             div.innerHTML = `<div class="poll-content"><span>${o.text}</span><span>🗳️ 투표</span></div>`;
@@ -237,11 +237,55 @@
         await clientSupabase.from('options').update({ votes: cvotes + 1 }).eq('id', oid);
     }
 
+    // 🕒 히스토리 화면 그리기 함수 (삭제 로직 반영)
     function showHistory() {
         const h = JSON.parse(localStorage.getItem('poll_h') || '[]');
         const container = document.getElementById('hist-list');
-        if(!h.length) { container.innerHTML = '<p style="color:#6b7280; text-align:center;">내역이 없습니다.</p>'; return; }
-        container.innerHTML = h.map(i => `<div class="hist-item" onclick="window.location.href='?poll_id=${i.id}'"><strong>${i.q}</strong><button class="btn-s" style="margin:0;">결과보기</button></div>`).join('');
+        if(!h.length) { container.innerHTML = '<p style="color:#6b7280; text-align:center;">저장된 설문 내역이 없습니다.</p>'; return; }
+        
+        container.innerHTML = '';
+        h.forEach((item, index) => {
+            const div = document.createElement('div');
+            div.className = 'hist-item';
+            
+            // 글자 클릭 시 결과 보기로 이동
+            div.innerHTML = `
+                <div class="hist-info" onclick="window.location.href='?poll_id=${item.id}'">
+                    <strong>${item.q}</strong>
+                </div>
+                <div class="hist-btns">
+                    <button class="btn-s" style="margin:0; padding:6px 12px; font-size:0.85rem;" onclick="window.location.href='?poll_id=${item.id}'">결과보기</button>
+                    <button class="btn-d" style="margin:0; padding:6px 12px; font-size:0.85rem;" onclick="deleteHistoryItem(event, ${index}, '${item.id}')">❌</button>
+                </div>
+            `;
+            container.appendChild(div);
+        });
+    }
+
+    // ❌ 변경 포인트: 특정 히스토리 하나만 골라서 지우기
+    function deleteHistoryItem(event, index, id) {
+        event.stopPropagation(); // 클릭 이벤트가 부모 div로 번져 페이지 이동이 일어나는 것 차단
+        if(!confirm("이 설문 기록을 목록에서 삭제하시겠습니까? (Supabase 데이터베이스 서버에는 기록이 유지됩니다)")) return;
+        
+        const h = JSON.parse(localStorage.getItem('poll_h') || '[]');
+        h.splice(index, 1); // 해당 순서의 아이템 제거
+        localStorage.setItem('poll_h', JSON.stringify(h));
+        localStorage.removeItem('my_poll_' + id); // 방장 권한 표식도 제거
+        
+        showHistory(); // 히스토리 목록 새로고침
+    }
+
+    // 🔥 변경 포인트: 모든 히스토리 한 번에 초기화하기
+    function clearAllHistory() {
+        if(!confirm("정말로 모든 설문 기록 히스토리를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.")) return;
+        
+        const h = JSON.parse(localStorage.getItem('poll_h') || '[]');
+        h.forEach(item => {
+            localStorage.removeItem('my_poll_' + item.id); // 모든 방장 권한 표식 제거
+        });
+        
+        localStorage.removeItem('poll_h'); // 히스토리 목록 키 완전 삭제
+        showHistory(); // 목록 갱신
     }
 </script>
 </body>
