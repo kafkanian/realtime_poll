@@ -148,7 +148,7 @@
     let channelRealtime = null;
     let isNameRequired = false;
     let rawOptionsData = []; 
-    let voterNamesList = []; // 실시간 참여자 이름을 순수하게 담을 글로벌 배열
+    let voterNamesList = []; 
     let isSortModeActive = false; 
 
     if (MY_URL !== '여기에_수파베이스_주소_입력') {
@@ -200,7 +200,6 @@
         if (reqName) q = q + " 🔒";
 
         try {
-            // 방명록 항목용 가짜 선택지를 하나 미리 구워둡니다.
             const { data: pData, error: pErr } = await clientSupabase
                 .from('polls')
                 .insert([{ question: q }])
@@ -209,9 +208,9 @@
             if (pErr) throw pErr;
             
             const optData = opts.map(t => ({ poll_id: pData.id, text: t, votes: 0 }));
-            // 명단 백업용 비밀 슬롯 추가
             if (reqName) {
-                optData.push({ poll_id: pData.id, text: "SYSTEM_VOTERS_SECRET_DATA_SLOT", votes: 0 });
+                // 식별을 위해 초기 텍스트 형태를 명확히 고정합니다.
+                optData.push({ poll_id: pData.id, text: "SYSTEM_SECRET_NAMES:", votes: 0 });
             }
             
             const { error: oErr } = await clientSupabase.from('options').insert(optData);
@@ -263,10 +262,8 @@
         const { data: opts } = await clientSupabase.from('options').select('*').eq('poll_id', id).order('id', {ascending:true});
         const unfiltered = opts || []; 
         
-        // 투표 수치용 진짜 선택지만 발라내기
-        rawOptionsData = unfiltered.filter(o => o.text !== "SYSTEM_VOTERS_SECRET_DATA_SLOT" && !o.text.startsWith("SYSTEM_SECRET_NAMES:"));
+        rawOptionsData = unfiltered.filter(o => !o.text.startsWith("SYSTEM_SECRET_NAMES:"));
         
-        // 숨겨진 방명록 데이터 슬롯 찾기
         const secretSlot = unfiltered.find(o => o.text.startsWith("SYSTEM_SECRET_NAMES:"));
         if (secretSlot) {
             const rawNames = secretSlot.text.replace("SYSTEM_SECRET_NAMES:", "");
@@ -294,7 +291,6 @@
         renderVoterLines(isSortModeActive);
     }
 
-    // ⭐ 철저한 은폐 보장: 항목과 무관하게 전체 참여자 명단만 묶어 출력하는 함수
     function renderVoterLines(shouldSort = false) {
         const voterLinesContainer = document.getElementById('dash-voter-lines');
         voterLinesContainer.innerHTML = '';
@@ -308,7 +304,6 @@
 
         let displayArray = [...voterNamesList];
 
-        // 가나다순 필터가 활성화되어 있으면 쪼개서 정렬해 줌
         if (shouldSort) {
             displayArray.sort((a, b) => a.localeCompare(b, 'ko'));
         }
@@ -348,9 +343,7 @@
         }
         
         const { data: opts = [] } = await clientSupabase.from('options').select('*').eq('poll_id', id).order('id', {ascending:true});
-        
-        // 참여자 정식 선택지만 노출
-        const validOpts = opts.filter(o => o.text !== "SYSTEM_VOTERS_SECRET_DATA_SLOT" && !o.text.startsWith("SYSTEM_SECRET_NAMES:"));
+        const validOpts = opts.filter(o => !o.text.startsWith("SYSTEM_SECRET_NAMES:"));
         
         const container = document.getElementById('vote-options');
         container.innerHTML = '';
@@ -369,9 +362,8 @@
                     if(!inputName) { alert("투표 유효성 확인을 위해 실명을 입력해 주세요."); return; }
                     if(inputName.includes(",") || inputName.includes(":")) { alert("이름에 특수문자(, :)는 사용할 수 없습니다."); return; }
 
-                    // 중복 이름 검사 (숨겨진 명단 검색)
-                    const secretSlot = opts.find(item => item.text.startsWith("SYSTEM_SECRET_NAMES:") || item.text === "SYSTEM_VOTERS_SECRET_DATA_SLOT");
-                    if (secretSlot && secretSlot.text.startsWith("SYSTEM_SECRET_NAMES:")) {
+                    const secretSlot = opts.find(item => item.text.startsWith("SYSTEM_SECRET_NAMES:"));
+                    if (secretSlot) {
                         const existingNames = secretSlot.text.replace("SYSTEM_SECRET_NAMES:", "").split(",").map(n => n.trim());
                         if (existingNames.includes(inputName)) {
                             alert(`'${inputName}'님은 이미 이 설문에 참여하셨습니다. 중복 투표는 불가능합니다.`);
@@ -380,15 +372,15 @@
                     }
                 }
 
-                // 1. 투표수 1개 올리기 (이름정보 없이 순수하게 표수만 차감/누적)
+                // 1. 순수 표 수 1 증가
                 await clientSupabase.from('options').update({ votes: o.votes + 1 }).eq('id', o.id);
 
-                // 2. 이름 필수방일 경우, 투표 항목과 무관하게 방명록 슬롯에만 따로 기록
+                // 2. 투표 항목과 무관하게 전체 방명록에만 이름 분리 기록
                 if (isNameRequired) {
-                    const secretSlot = opts.find(item => item.text.startsWith("SYSTEM_SECRET_NAMES:") || item.text === "SYSTEM_VOTERS_SECRET_DATA_SLOT");
+                    const secretSlot = opts.find(item => item.text.startsWith("SYSTEM_SECRET_NAMES:"));
                     if (secretSlot) {
                         let currentNamesText = secretSlot.text;
-                        if (currentNamesText === "SYSTEM_VOTERS_SECRET_DATA_SLOT") {
+                        if (currentNamesText === "SYSTEM_SECRET_NAMES:") {
                             currentNamesText = "SYSTEM_SECRET_NAMES:" + inputName;
                         } else {
                             currentNamesText = currentNamesText + ", " + inputName;
